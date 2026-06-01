@@ -27,12 +27,27 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                    aws ssm send-command \
-                      --document-name "AWS-RunShellScript" \
-                      --targets "Key=tag:Role,Values=flask-app" \
-                      --comment "Deploy flask app" \
-                      --parameters commands='["cd /home/appuser/app","git pull origin main","pip3 install -r requirements.txt --break-system-packages","systemctl restart flaskapp"]' \
-                      --region $AWS_REGION
+                    CMD_ID=$(aws ssm send-command \
+                    --document-name "AWS-RunShellScript" \
+                    --targets "Key=tag:Role,Values=flask-app" \
+                    --comment "Deploy flask app" \
+                    --parameters commands='["git config --system --add safe.directory /home/appuser/app","git -C /home/appuser/app fetch origin main","git -C /home/appuser/app reset --hard origin/main","chown -R appuser:appuser /home/appuser/app","systemctl restart flaskapp"]' \
+                    --region $AWS_REGION \
+                    --query "Command.CommandId" --output text)
+
+                    echo "SSM Command ID: $CMD_ID"
+
+                    INSTANCE_IDS=$(aws ec2 describe-instances \
+                    --filters "Name=tag:Role,Values=flask-app" "Name=instance-state-name,Values=running" \
+                    --query "Reservations[].Instances[].InstanceId" --output text --region $AWS_REGION)
+
+                    for ID in $INSTANCE_IDS; do
+                    aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$ID" --region $AWS_REGION || true
+                    done
+
+                    aws ssm list-command-invocations \
+                    --command-id "$CMD_ID" --details --region $AWS_REGION \
+                    --query "CommandInvocations[].{Instance:InstanceId,Status:Status}" --output table
                 '''
             }
         }
