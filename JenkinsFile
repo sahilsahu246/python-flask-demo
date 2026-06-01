@@ -31,17 +31,15 @@ pipeline {
                     --document-name "AWS-RunShellScript" \
                     --targets "Key=tag:Role,Values=flask-app" \
                     --comment "Deploy flask app" \
-                    --parameters commands='["git config --system --add safe.directory /home/appuser/app","git -C /home/appuser/app fetch origin main","git -C /home/appuser/app reset --hard origin/main","chown -R appuser:appuser /home/appuser/app","systemctl restart flaskapp"]' \
+                    --parameters commands='["git config --system --add safe.directory /home/appuser/app","git -C /home/appuser/app fetch origin main","git -C /home/appuser/app reset --hard origin/main","chown -R appuser:appuser /home/appuser/app","pip3 install -r /home/appuser/app/requirements.txt","systemctl restart flaskapp"]' \
                     --region $AWS_REGION \
                     --query "Command.CommandId" --output text)
 
                     echo "SSM Command ID: $CMD_ID"
 
-                    INSTANCE_IDS=$(aws ec2 describe-instances \
-                    --filters "Name=tag:Role,Values=flask-app" "Name=instance-state-name,Values=running" \
-                    --query "Reservations[].Instances[].InstanceId" --output text --region $AWS_REGION)
-
-                    for ID in $INSTANCE_IDS; do
+                    for ID in $(aws ec2 describe-instances \
+                        --filters "Name=tag:Role,Values=flask-app" "Name=instance-state-name,Values=running" \
+                        --query "Reservations[].Instances[].InstanceId" --output text --region $AWS_REGION); do
                     aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$ID" --region $AWS_REGION || true
                     done
 
