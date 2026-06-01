@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return f"Hello change from Sahil the CI/CD pipeline creator! Served by host: {socket.gethostname()}\n"
+    return f"Hello, finally the CICD pipeline is working! Served by host: {socket.gethostname()}\n"
 
 @app.route("/health")
 def health():
