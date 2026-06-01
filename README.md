@@ -479,4 +479,141 @@ systemctl enable --now flaskapp
 * The `Role=flask-app` tag will be added in the Auto Scaling Group and propagated to all instances.
 * Jenkins will use this tag to identify deployment targets.
 
+## Step 10: Target Group
 
+**EC2 → Target Groups → Create**
+
+* Name: `flask-tg`
+* Target Type: `Instances`
+* Protocol/Port: `HTTP : 5000`
+* VPC: `flask-vpc`
+* Health Check Path: `/health`
+
+> Do not register targets manually. The ASG will handle registration.
+
+---
+
+## Step 11: Application Load Balancer
+
+**EC2 → Load Balancers → Create → Application Load Balancer**
+
+* Name: `flask-alb`
+* Scheme: `Internet-facing`
+* VPC: `flask-vpc`
+* Subnets: `flask-public-a`, `flask-public-b`
+* Security Group: `alb-sg`
+* Listener: `HTTP : 80`
+* Forward to: `flask-tg`
+
+> Save the ALB DNS name after creation.
+
+---
+
+## Step 12:  Auto Scaling Group
+
+**EC2 → Auto Scaling Groups → Create**
+
+* Name: `flask-asg`
+* Launch Template: `flask-app-lt`
+* VPC: `flask-vpc`
+* Subnets: `flask-public-a`, `flask-public-b`
+* Attach existing Target Group: `flask-tg`
+* Health Check Type: `ELB`
+* Desired: `1`
+* Min: `1`
+* Max: `2`
+
+### Tag
+
+| Key  | Value     |
+| ---- | --------- |
+| Role | flask-app |
+
+Enable **Tag new instances = Yes**.
+
+---
+
+### Validation
+
+```text
+http://<alb-dns-name>/
+```
+
+Expected: Flask app response.
+
+```text
+http://<instance-public-ip>:5000/
+```
+
+Expected: Same Flask app response.
+
+
+## Step 13: Create Jenkins Pipeline
+
+1. **Jenkins → New Item → Pipeline**
+
+* Name: `flask-cicd`
+* Definition: `Pipeline script from SCM`
+* SCM: `Git`
+* Repository URL: Your GitHub HTTPS URL
+* Branch: `*/main`
+* Script Path: `Jenkinsfile`
+
+Save the job.
+
+---
+
+2. **Build Trigger: Configure GitHub Webhook**
+
+### Jenkins
+
+**Job → Configure → Build Triggers**
+
+Enable:
+
+```text
+GitHub hook trigger for GITScm polling
+```
+
+Save the job.
+
+### Security Group
+
+Allow GitHub to access Jenkins on port **8080**.
+
+For a learning project, you can temporarily add:
+
+```text
+Custom TCP 8080 → 0.0.0.0/0
+```
+
+to `jenkins-sg`.
+
+### GitHub
+
+**Repository → Settings → Webhooks → Add Webhook**
+
+| Field        | Value                                             |
+| ------------ | ------------------------------------------------- |
+| Payload URL  | `http://<jenkins-public-ip>:8080/github-webhook/` |
+| Content Type | `application/json`                                |
+| Events       | Just the push event                               |
+| Active       | Yes                                               |
+
+Click **Add Webhook**.
+
+---
+
+### Test
+
+Push a commit:
+
+```bash
+git init
+git add .
+git checkout -b webhook-testing-branch
+git add .
+git commit --allow-empty -m "test webhook"   #If there are no changes going in the git push
+git push origin webhook-testing-branch
+```
+Create PR and merge. Then Jenkins should automatically trigger a new build within a few seconds.
